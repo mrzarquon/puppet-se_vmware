@@ -1,0 +1,84 @@
+#!/opt/puppet/bin/ruby
+### BEGIN INIT INFO
+# Provides:          vmware-post
+# Required-Start:    $all
+# Required-Stop:
+# Default-Start:     2 3 4 5
+# Default-Stop:
+# Short-Description: Run /etc/init.d/vmware-post
+### END INIT INFO
+
+# Script to update things on first boot of a VM cloned from template.  Probably better
+# served as a bourne script but we need rbvmomi, because I don't want to parse soap
+# returned from a curl.
+# Dependancies:
+#   apt: facter, ruby-minitest, racc, rake, rdoc, ruby-dev, libxml2-dev, libxslt-dev
+#   gem: rbvmomi
+
+require 'rubygems'
+require 'rbvmomi'
+require 'facter'
+require 'socket'
+
+# Because I can't for the life of me get debain to 100% always wait on DNS.
+begin
+  Socket.getaddrinfo('vcsa', nil)
+rescue
+  retry
+end
+
+vim = RbVmomi::VIM.connect(
+  :host     => 'vcsa',
+  :user     => 'username',
+  :password => 'password'
+  :ssl      => true,
+  :insecure => true,
+  :rev      => '5.0'
+)
+
+ip = Facter.value(:ipaddress_eth0)
+
+vm = nil
+
+while vm.nil?
+  vm = vim.searchIndex.FindByIp(:vmSearch => true, :ip => ip)
+  sleep 2
+end
+
+# Set and save hostname
+hostname = vm.name
+
+File.open('/etc/hostname', 'w') do |f|
+  f.write(hostname)
+end
+
+Kernel.system('hostname -F /etc/hostname')
+
+# Put hostname in our dhclient.conf so it gets sent to DNS.
+data = File.read('/etc/dhcp/dhclient.conf')
+
+File.open('/etc/dhcp/dhclient.conf', 'w') do |f|
+  data.gsub!(/^(send host-name).*/, "\\1 \"#{hostname}\";")
+  f.write(data)
+end
+
+Kernel.system('dhclient eth0')
+
+# Clean up puppet's ssldir...shelling our because of run_mode.
+ssldir = `/opt/puppet/bin/puppet config print ssldir`
+
+# Destruction!
+Kernel.system("rm -rf #{ssldir}")
+
+# New fqdn we have.
+fqdn = Facter.value(:fqdn)
+domain = Facter.value(:domain)
+
+# Setup with new certs
+Kernel.system("/opt/puppet/bin/puppet agent --server puppet.#{domain} --waitforcert 10 --onetime --no-daemonize --pluginsync true --certname #{fqdn}")
+
+Kernel.system('update-rc.d vmware-post disable')
+
+Kernel.system('reboot')
+
+exit 0

@@ -1,0 +1,5 @@
+:default:
+  :vsphere_server: vcsa.se.eng.puppetlabs.net
+  :vsphere_username: root
+  :vsphere_password: puppetlabs
+  :vsphere_expected_pubkey_hash: 11bd2071c65ec0e1e4463fc19033bced0f2454e0cebf17958c6d7db33a14583e
