@@ -1,0 +1,2 @@
+---
+se_vmware::pe_servicename: 'pe-puppet-agent'
